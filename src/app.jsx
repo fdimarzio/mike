@@ -41,13 +41,21 @@ const f$0 = v => v == null ? "—" : "$" + Math.round(Math.abs(v)).toLocaleStrin
 const fSign = v => v == null ? "—" : (v >= 0 ? "+" : "-") + "$" + Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fPct = (v, total) => total ? ((v / total) * 100).toFixed(1) + "%" : "0%";
 
+// ── Default users (same as PRI) ──────────────────────────────────────────────
+const USERS_DEFAULT = [
+  { id:"frank",     name:"Frank M DiMarzio",           initials:"FD", color:"#1a3a5c", pin:"0116" },
+  { id:"priscilla", name:"Priscilla Perutti DiMarzio", initials:"PP", color:"#2d6a9f", pin:"4223" },
+];
+
 // ── Main App ─────────────────────────────────────────────────────────────────
 export default function Mike() {
   // Auth
-  const [authed, setAuthed] = useState(false);
-  const [pin, setPin] = useState("");
+  const [users, setUsers] = useState(USERS_DEFAULT);
+  const [authUser, setAuthUser] = useState(null);
+  const [loginStep, setLoginStep] = useState("pick"); // "pick" | "pin"
+  const [loginTarget, setLoginTarget] = useState(null);
+  const [pinInput, setPinInput] = useState("");
   const [pinErr, setPinErr] = useState("");
-  const MIKE_PIN = import.meta.env.VITE_MIKE_PIN || "1234";
 
   // Data
   const [tab, setTab] = useState("dashboard");
@@ -70,10 +78,12 @@ export default function Mike() {
 
   // ── Load data ──────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!authed) return;
+    if (!authUser) return;
     async function load() {
       try {
-        // Load expenses
+        // Load users from Supabase (to get current PINs)
+        const { data: uData } = await supabase.from("app_users").select("*");
+        if (uData?.length) setUsers(uData);
         const { data: expData } = await supabase.from("mike_expenses").select("*").order("date", { ascending: false });
         if (expData) setExpenses(expData);
 
@@ -176,42 +186,67 @@ export default function Mike() {
     setIncomes(p => p.filter(i => i.id !== id));
   };
 
-  // ── PIN LOGIN ──────────────────────────────────────────────────────────────
-  if (!authed) return (
-    <div style={{ minHeight: "100vh", background: "#f8f9fa", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Georgia', serif" }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Source+Sans+3:wght@300;400;500;600&display=swap');*{box-sizing:border-box;margin:0;padding:0}`}</style>
-      <div style={{ background: "#fff", borderRadius: 16, padding: 40, width: "100%", maxWidth: 360, boxShadow: "0 4px 40px rgba(0,0,0,0.08)", border: "1px solid #e8eaf0" }}>
-        <div style={{ textAlign: "center", marginBottom: 32 }}>
-          <div style={{ width: 56, height: 56, background: "linear-gradient(135deg, #1a3a5c, #2d6a9f)", borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
-            <span style={{ fontFamily: "'Playfair Display', serif", fontWeight: 700, fontSize: 18, color: "#fff", letterSpacing: 1 }}>M</span>
+  // ── Auth helpers ──────────────────────────────────────────────────────────
+  const selUser = u => { setLoginTarget(u); setPinInput(""); setPinErr(""); setLoginStep("pin"); };
+  const pinDigit = d => {
+    const np = pinInput + d; setPinInput(np);
+    if (np.length === 4) {
+      if (np === loginTarget.pin) { setAuthUser(loginTarget); setLoginStep("pick"); setPinInput(""); }
+      else { setPinErr("Wrong PIN"); setTimeout(() => { setPinInput(""); setPinErr(""); }, 900); }
+    }
+  };
+
+  // ── LOGIN ──────────────────────────────────────────────────────────────────
+  if (!authUser) return (
+    <div style={{ minHeight: "100vh", background: "#f4f6f9", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Source Sans 3',sans-serif", padding: 16 }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Source+Sans+3:wght@300;400;500;600&display=swap');*{box-sizing:border-box;margin:0;padding:0}@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}`}</style>
+      <div style={{ width: "100%", maxWidth: 340, animation: "fadeIn .3s ease" }}>
+        <div style={{ textAlign: "center", marginBottom: 28 }}>
+          <div style={{ width: 56, height: 56, background: "linear-gradient(135deg, #1a3a5c, #2d6a9f)", borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px", boxShadow: "0 4px 20px rgba(26,58,92,0.2)" }}>
+            <span style={{ fontFamily: "'Playfair Display',serif", fontWeight: 700, fontSize: 20, color: "#fff" }}>M</span>
           </div>
-          <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700, color: "#1a2a3a", marginBottom: 4 }}>MIKE</div>
-          <div style={{ fontFamily: "'Source Sans 3', sans-serif", fontSize: 12, color: "#8a9ab0", letterSpacing: "0.08em", textTransform: "uppercase" }}>Manage Income & Key Expenses</div>
+          <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 22, fontWeight: 700, color: "#1a2a3a" }}>MIKE</div>
+          <div style={{ fontSize: 11, color: "#8a9ab0", letterSpacing: "0.08em", textTransform: "uppercase", marginTop: 4 }}>Manage Income & Key Expenses</div>
         </div>
-        <div style={{ fontFamily: "'Source Sans 3', sans-serif", fontSize: 12, color: "#8a9ab0", textAlign: "center", marginBottom: 20, letterSpacing: "0.04em" }}>ENTER PIN</div>
-        <div style={{ display: "flex", justifyContent: "center", gap: 10, marginBottom: 20 }}>
-          {[0, 1, 2, 3].map(i => (
-            <div key={i} style={{ width: 12, height: 12, borderRadius: "50%", background: i < pin.length ? "#1a3a5c" : "transparent", border: `2px solid ${i < pin.length ? "#1a3a5c" : "#d0d5e0"}`, transition: "all .15s" }} />
-          ))}
-        </div>
-        {pinErr && <div style={{ textAlign: "center", color: "#c0392b", fontSize: 12, fontFamily: "'Source Sans 3',sans-serif", marginBottom: 12 }}>{pinErr}</div>}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
-          {[1, 2, 3, 4, 5, 6, 7, 8, 9, "", 0, "⌫"].map((d, i) => (
-            <button key={i} disabled={d === ""} onClick={() => {
-              if (d === "⌫") { setPin(p => p.slice(0, -1)); return; }
-              if (d === "") return;
-              const np = pin + d;
-              setPin(np);
-              if (np.length === 4) {
-                if (np === MIKE_PIN) { setAuthed(true); setPin(""); }
-                else { setPinErr("Incorrect PIN"); setTimeout(() => { setPin(""); setPinErr(""); }, 900); }
-              }
-            }}
-              style={{ background: d === "" ? "transparent" : "#f4f6f9", border: d === "" ? "none" : "1px solid #e0e4ec", borderRadius: 10, padding: "14px 0", fontSize: d === "⌫" ? 16 : 18, fontFamily: "'Source Sans 3',sans-serif", color: "#1a2a3a", cursor: d === "" ? "default" : "pointer", fontWeight: 500 }}>
-              {d}
-            </button>
-          ))}
-        </div>
+
+        {loginStep === "pick" ? (
+          <div>
+            <div style={{ fontSize: 11, color: "#8a9ab0", textAlign: "center", marginBottom: 14, letterSpacing: "0.06em", textTransform: "uppercase" }}>Select User</div>
+            {users.map(u => (
+              <button key={u.id} onClick={() => selUser(u)}
+                style={{ background: "#fff", border: `1px solid ${u.color}30`, borderRadius: 12, padding: "13px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 12, width: "100%", marginBottom: 8, boxShadow: "0 1px 6px rgba(0,0,0,0.05)" }}>
+                <div style={{ width: 36, height: 36, borderRadius: "50%", background: u.color + "18", border: `2px solid ${u.color}50`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Playfair Display',serif", fontWeight: 700, color: u.color, fontSize: 12, flexShrink: 0 }}>{u.initials}</div>
+                <div style={{ textAlign: "left" }}>
+                  <div style={{ color: "#1a2a3a", fontSize: 14, fontWeight: 600 }}>{u.name}</div>
+                  <div style={{ color: "#8a9ab0", fontSize: 11, marginTop: 1 }}>Enter PIN to continue</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div style={{ animation: "fadeIn .2s ease" }}>
+            <button onClick={() => setLoginStep("pick")} style={{ background: "transparent", border: "none", color: "#8a9ab0", fontSize: 11, cursor: "pointer", marginBottom: 14, display: "flex", alignItems: "center", gap: 6 }}>← Back</button>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18, padding: "10px 14px", background: "#fff", borderRadius: 10, border: `1px solid ${loginTarget.color}20`, boxShadow: "0 1px 6px rgba(0,0,0,0.05)" }}>
+              <div style={{ width: 32, height: 32, borderRadius: "50%", background: loginTarget.color + "18", border: `2px solid ${loginTarget.color}50`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Playfair Display',serif", fontWeight: 700, color: loginTarget.color, fontSize: 11 }}>{loginTarget.initials}</div>
+              <div>
+                <div style={{ color: "#1a2a3a", fontSize: 13, fontWeight: 600 }}>{loginTarget.name}</div>
+                <div style={{ color: "#8a9ab0", fontSize: 11 }}>Enter 4-digit PIN</div>
+              </div>
+            </div>
+            <div style={{ display: "flex", justifyContent: "center", gap: 12, marginBottom: 18 }}>
+              {[0, 1, 2, 3].map(i => <div key={i} style={{ width: 12, height: 12, borderRadius: "50%", background: i < pinInput.length ? loginTarget.color : "transparent", border: `2px solid ${i < pinInput.length ? loginTarget.color : "#d0d5e0"}`, transition: "all .15s" }} />)}
+            </div>
+            {pinErr && <div style={{ textAlign: "center", color: "#c0392b", fontSize: 12, marginBottom: 10 }}>{pinErr}</div>}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, "", 0, "⌫"].map((d, i) => (
+                <button key={i} disabled={d === ""} onClick={() => d === "⌫" ? setPinInput(p => p.slice(0, -1)) : d !== "" ? pinDigit(String(d)) : null}
+                  style={{ background: d === "" ? "transparent" : "#fff", border: d === "" ? "none" : "1px solid #e0e4ec", borderRadius: 10, padding: "13px 0", fontSize: d === "⌫" ? 16 : 18, color: "#1a2a3a", cursor: d === "" ? "default" : "pointer", fontWeight: 500, fontFamily: "'Source Sans 3',sans-serif", boxShadow: d === "" ? "none" : "0 1px 4px rgba(0,0,0,0.04)" }}>
+                  {d}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -291,11 +326,12 @@ export default function Mike() {
           ))}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 28, height: 28, borderRadius: "50%", background: authUser.color + "30", border: `2px solid ${authUser.color}60`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Playfair Display',serif", fontWeight: 700, color: "#fff", fontSize: 10 }}>{authUser.initials}</div>
           <select value={yearFilter} onChange={e => setYearFilter(e.target.value)}
             style={{ ...inputStyle, width: 90, fontSize: 11, padding: "4px 8px", background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", color: "#fff", borderRadius: 6 }}>
             {["2024", "2025", "2026", "2027"].map(y => <option key={y} value={y} style={{ color: "#1a2a3a", background: "#fff" }}>{y}</option>)}
           </select>
-          <button onClick={() => setAuthed(false)} style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 6, padding: "5px 10px", fontSize: 11, color: "rgba(255,255,255,0.7)" }}>Sign Out</button>
+          <button onClick={() => setAuthUser(null)} style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 6, padding: "5px 10px", fontSize: 11, color: "rgba(255,255,255,0.7)" }}>Sign Out</button>
         </div>
       </div>
 
